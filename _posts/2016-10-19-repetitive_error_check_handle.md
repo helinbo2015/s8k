@@ -1,4 +1,8 @@
-#### 错误处理代码怎么写  
+---
+layout: post
+title: 不一样的Go语言错误处理
+category: golang
+---
 
 刚开始写go语言代码的时候，经常有一半都是下面这样的错误处理重复代码。  
 ```golang
@@ -6,6 +10,8 @@ if err != nil {
 	return err
 }
 ```
+<!--description-->
+
 后来接触到k8s时，发现它里面的错误处理代码并不多。它对重复的错误代码采用了比较优雅的处理方式。下面是k8s里面的一段代码(REST GET请求)  
 ```golang
 func Get(req  *client.Request) (runtime.Object, error) {
