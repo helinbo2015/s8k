@@ -5,7 +5,7 @@ category: golang
 ---
 
 刚开始写go语言代码的时候，经常有一半都是下面这样的错误处理重复代码。  
-```golang
+```Go
 if err != nil {
 	return err
 }
@@ -13,7 +13,7 @@ if err != nil {
 <!--description-->
 
 后来接触到k8s时，发现它里面的错误处理代码并不多。它对重复的错误代码采用了比较优雅的处理方式。下面是k8s里面的一段代码(REST GET请求)  
-```golang
+```Go
 func Get(req  *client.Request) (runtime.Object, error) {
 	return request.Namespace(namespace).
 			Resource(resource).
@@ -28,7 +28,7 @@ func Get(req  *client.Request) (runtime.Object, error) {
 2. 当`return`语句中的某个方法(比如: `Resource()`)执行产生`error`时，是怎么继续执行后续的处理的。  
 
 其实设计比较简单，首先`client.Request`结构中定义了一个error.  
-```golang
+```Go
 type Request struct {
 	...
 	// output
@@ -38,7 +38,7 @@ type Request struct {
 ```
 
 然后我们看各个方法中对`err`变量的处理(用`Namespace()`说明)  
-```golang
+```Go
 func (r *Request) Namespace(namespace string) *Request {
 	if r.err != nil {
 		return r

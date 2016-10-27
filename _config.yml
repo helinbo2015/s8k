@@ -20,6 +20,7 @@ github_username: helinbo2015
 markdown: kramdown
 kramdown:
   input: GFM
+  syntax_highlighter: rouge
 
 # Third-party services
 # just leave someone empty to disable it
