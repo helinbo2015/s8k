@@ -59,6 +59,6 @@ func (r *Request) Namespace(namespace string) *Request {
 - 正因为`error`是一个值，就可以很自由的跟`struct`，`func`结合，发挥程序员的想象，写出更优雅的错误代码。  
 
 参考链接:  
-1. [k8s源码](https://github.com/kubernetes/kubernetes)
-2. [Errors are values](https://blog.golang.org/errors-are-values)
-3. [Golang Error Handling lesson by Rob Pike](http://jxck.hatenablog.com/entry/golang-error-handling-lesson-by-rob-pike)
+1. [k8s源码](https://github.com/kubernetes/kubernetes)  
+2. [Errors are values](https://blog.golang.org/errors-are-values)  
+3. [Golang Error Handling lesson by Rob Pike](http://jxck.hatenablog.com/entry/golang-error-handling-lesson-by-rob-pike)  
