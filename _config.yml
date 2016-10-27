@@ -17,14 +17,11 @@ url: "http://helinbo2015.github.io" # the base hostname & protocol for your site
 github_username: helinbo2015 
 
 # Build settings
+highlighter: rouge
 markdown: kramdown
 kramdown:
   input: GFM
-  hard_wrap: true
-  highlighter: rouge
-exclude:
-  - Gemfile
-  - Gemfile.lock
+  syntax_highlighter: rouge
 
 # Third-party services
 # just leave someone empty to disable it
