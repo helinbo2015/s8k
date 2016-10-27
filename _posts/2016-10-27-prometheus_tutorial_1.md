@@ -18,7 +18,7 @@ category: prometheus
 
 然后看看prometheus的架构(*我只把我使用过的架构画出来*)  
 
-![promtheus_arch.png](/img/promtheus_arch.png)
+![promtheus_arch.png](./img/promtheus_arch.png)
 
 - 针对长时间运行程序(比如说K8S)，尽量采用简单方案: 直接在监控对象中集成prometheus client library来暴露监控数据，promehteus server采用PULL的方式从定时从监控对象中提取数据。  
 - 针对短期任务(比如说一个shell job)，通过prometheus server来PULL数据的话，可能短期任务已经结束了，而PULL请求还没来。这时就需要采用Pushgateway的方案。  
