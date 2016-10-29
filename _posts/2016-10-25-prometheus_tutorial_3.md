@@ -29,30 +29,89 @@ prometheus 提供四种指标类型(metric type)供监控对象使用，所以�
 #### 1. Counter:  
    Counter接口的定义如下:  
 
-![Counter_interface.PNG](/s8k/img/Counter_interface.PNG)  
+```Go
+type Counter interface {
+    Metric
+    Collector
 
+    // Set is used to set the Counter to an arbitrary value. It is only used
+    // if you have to transfer a value from an external counter into this
+    // Prometheus metric. Do not use it for regular handling of a
+    // Prometheus counter (as it can be used to break the contract of
+    // monotonically increasing values).
+    Set(float64)
+    // Inc increments the counter by 1.
+    Inc()
+    // Add adds the given value to the counter. It panics if the value is <
+    // 0.
+    Add(float64)
+}
+```
 Counter就提供Set(), Inc(), Add()方法，可以看出Counter指标类型就是为一直增大的数值定制的。  
 另外Counter监控指标定义的初始化方法: NewCounter()、NewCounterVec()  
 
 #### 2. Gauge:  
    Gauge接口的定义如下:  
 
-![Gauge_interface.PNG](/s8k/img/Gauge_interface.PNG)  
+```Go
+type Gauge interface {
+    Metric
+    Collector
 
+    // Set sets the Gauge to an arbitrary value.
+    Set(float64)
+    // Inc increments the Gauge by 1.
+    Inc()
+    // Dec decrements the Gauge by 1.
+    Dec()
+    // Add adds the given value to the Gauge. (The value can be
+    // negative, resulting in a decrease of the Gauge.)
+    Add(float64)
+    // Sub subtracts the given value from the Gauge. (The value can be
+    // negative, resulting in an increase of the Gauge.)
+    Sub(float64)
+}
+```
 相比Counter，Gauge就除了提供Set(), Inc(), Add()方法，另外还有Dec(), Sub()方法，毫无疑问Gauge指标类型是为动态变化的指标定制的  
 另外Gauge监控指标定义的初始化方法: NewGauge()、NewGaugeVec()  
 
 #### 3. Histogram:  
 Histogram稍微复杂点，我们先看看Histogram的接口定义:  
 
-![Histogram_interface.PNG](/s8k/img/Histogram_interface.PNG)  
+```Go
+type Histogram interface {
+    Metric
+    Collector
 
+    // Observe adds a single observation to the histogram.
+    Observe(float64)
+}
+```
 看到有一个Observe()方法，主要用于采集指标数据。  
 
 为了理解Historgram数据的场景，再看看Histogram接口的实现histogram struct给prometheus server提供的数据。（实现Metric接口的Write()方法，用于给Prometheus Server返回数据）  
 
-![histogram_write.PNG](/s8k/img/histogram_write.PNG)  
+```Go
+func (h *histogram) Write(out *dto.Metric) error {
+    his := &dto.Histogram{}
+    buckets := make([]*dto.Bucket, len(h.upperBounds))
 
+    his.SampleSum = proto.Float64(math.Float64frombits(atomic.LoadUint64(&h.sumBits)))
+    his.SampleCount = proto.Uint64(atomic.LoadUint64(&h.count))
+    var count uint64
+    for i, upperBound := range h.upperBounds {
+        count += atomic.LoadUint64(&h.counts[i])
+        buckets[i] = &dto.Bucket{
+            CumulativeCount: proto.Uint64(count),
+            UpperBound:      proto.Float64(upperBound),
+        }
+    }
+    his.Bucket = buckets
+    out.Histogram = his
+    out.Label = h.labelPairs
+    return nil
+}
+```
 从上面代码可以看到主要给prometheus server返回了下面的数据。  
 
 * SampleSum: 由h.sumBits转换而来  
@@ -61,8 +120,55 @@ Histogram稍微复杂点，我们先看看Histogram的接口定义:
 
 接下来看看h.upperBounds的初始化和Observe（）方法的具体实现，看看上面的数据分别是什么意思  
 
-![histogram_observe.gif](/s8k/img/histogram_observe.gif)  
+```Go
+var (
+    // DefBuckets are the default Histogram buckets. The default buckets are
+    // tailored to broadly measure the response time (in seconds) of a
+    // network service. Most likely, however, you will be required to define
+    // buckets customized to your use case.
+    DefBuckets = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
+    ...
+)
 
+func newHistogram(desc *Desc, opts HistogramOpts, labelValues ...string) Histogram {
+    ...
+    if len(opts.Buckets) == 0 { **h.upperBounds是默认的buckets，或者监控对象指定的Buckets**
+        opts.Buckets = DefBuckets
+    }
+
+    h := &histogram{
+        desc:        desc,
+        upperBounds: opts.Buckets,
+        labelPairs:  makeLabelPairs(desc, labelValues),
+    }
+    ...
+```
+
+```Go
+func (h *histogram) Observe(v float64) {
+    // TODO(beorn7): For small numbers of buckets (<30), a linear search is
+    // slightly faster than the binary search. If we really care, we could
+    // switch from one search strategy to the other depending on the number
+    // of buckets.
+    //
+    // Microbenchmarks (BenchmarkHistogramNoLabels):
+    // 11 buckets: 38.3 ns/op linear - binary 48.7 ns/op
+    // 100 buckets: 78.1 ns/op linear - binary 54.9 ns/op
+    // 300 buckets: 154 ns/op linear - binary 61.6 ns/op
+    i := sort.SearchFloat64s(h.upperBounds, v)
+    if i < len(h.counts) {
+        atomic.AddUint64(&h.counts[i], 1) **可以看出h.counts[]是各个bucket内落入的监控次数(sum(h.counts[])==h.count)**
+    }
+    atomic.AddUint64(&h.count, 1) **可以看出h.count是监控指标的监控次数**
+    for {
+        oldBits := atomic.LoadUint64(&h.sumBits)
+        newBits := math.Float64bits(math.Float64frombits(oldBits) + v)
+        if atomic.CompareAndSwapUint64(&h.sumBits, oldBits, newBits){**可以看到h.sumBits是监控指标的sum结果**
+            break
+        }
+    }
+}
+```
 根据上面的分析，可以看出Histogram给prometheus server返回的数据:  
 
 * SampleSum: 监控指标数值的累加值  
@@ -75,13 +181,116 @@ Histogram稍微复杂点，我们先看看Histogram的接口定义:
 #### 4. Summary  
 Summary的接口定义和Histogram一样，我们直接看他的Write()和Observe()的实现  
 
-![summary_observe.PNG](/s8k/img/summary_observe.PNG)  
+```Go
+func (s *summary) Observe(v float64) {
+    s.bufMtx.Lock()
+    defer s.bufMtx.Unlock()
 
-每次调用中，把监控指标的数值写入s.hotBuf  
+    now := time.Now()
+    if now.After(s.hotBufExpTime) {
+        s.asyncFlush(now)
+    }
+    s.hotBuf = append(s.hotBuf, v)    **每次调用中，把监控指标的数值写入s.hotBuf**
+    if len(s.hotBuf) == cap(s.hotBuf) {
+        s.asyncFlush(now)
+    }
+}
+```
+```Go
+func (s *summary) Write(out *dto.Metric) error {
+    sum := &dto.Summary{}
+    qs := make([]*dto.Quantile, 0, len(s.objectives))
 
-![summary_write.gif](/s8k/img/summary_write.gif)  
+    s.bufMtx.Lock()
+    s.mtx.Lock()
+    // Swap bufs even if hotBuf is empty to set new hotBufExpTime.
+    s.swapBufs(time.Now())    ** 1.冷热指标buf切换,具体见swapBufs()函数 **
+    s.bufMtx.Unlock()
 
-根据s.hotBufExpTime切换输出的数据流。所以s.hotBufExpTime+s.headStream就组成了一个滑动的时间窗口。s.hotBufExpTime默认值为2m, 或者用户通过SummaryOpts.MaxAge/SummaryOpts.AgeBuckets来指定  
+    s.flushColdBuf() ** 2.把冷buf数据flush进stream, 具体见flushColdBuf()函数**
+    sum.SampleCount = proto.Uint64(s.cnt)
+    sum.SampleSum = proto.Float64(s.sum)
+
+    for _, rank := range s.sortedObjectives { **指标的quantile遍历**
+        var q float64
+        if s.headStream.Count() == 0 {
+            q = math.NaN()
+        } else {
+            q = s.headStream.Query(rank) **quantile位置的指标数值**
+        }
+        qs = append(qs, &dto.Quantile{
+            Quantile: proto.Float64(rank),
+            Value:    proto.Float64(q),
+        })
+    }
+
+    s.mtx.Unlock()
+
+    if len(qs) > 0 {
+        sort.Sort(quantSort(qs))
+    }
+    sum.Quantile = qs
+
+    out.Summary = sum
+    out.Label = s.labelPairs
+    return nil
+}
+
+// swapBufs needs mtx AND bufMtx locked, coldBuf must be empty.
+func (s *summary) swapBufs(now time.Time) {
+    if len(s.coldBuf) != 0 {
+        panic("coldBuf is not empty")
+    }
+    s.hotBuf, s.coldBuf = s.coldBuf, s.hotBuf
+    // hotBuf is now empty and gets new expiration set.
+    for now.After(s.hotBufExpTime) {
+        s.hotBufExpTime = s.hotBufExpTime.Add(s.streamDuration)
+    }
+}
+
+// flushColdBuf needs mtx locked.
+func (s *summary) flushColdBuf() {
+    for _, v := range s.coldBuf {
+        for _, stream := range s.streams {
+            stream.Insert(v)
+        }
+        s.cnt++
+        s.sum += v
+    }
+    s.coldBuf = s.coldBuf[0:0]
+    s.maybeRotateStreams()
+}
+
+// 根据s.hotBufExpTime切换输出的数据流。所以s.hotBufExpTime+s.headStream就组成了一个滑动的时间窗口。
+// s.hotBufExpTime默认值为2m, 或者用户通过
+// SummaryOpts.MaxAge/SummaryOpts.AgeBuckets来指定
+func (s *summary) maybeRotateStreams() {
+    for !s.hotBufExpTime.Equal(s.headStreamExpTime) {
+        s.headStream.Reset()
+        s.headStreamIdx++
+        if s.headStreamIdx >= len(s.streams) {
+            s.headStreamIdx = 0
+        }
+        s.headStream = s.streams[s.headStreamIdx]
+        s.headStreamExpTime = s.headStreamExpTime.Add(s.streamDuration)
+    }
+}
+
+func (s *stream) query(q float64) float64 {
+    t := math.Ceil(q * s.n)
+    t += math.Ceil(s.ƒ(s, t) / 2)
+    p := s.l[0]
+    var r float64
+    for _, c := range s.l[1:] {
+        r += p.Width
+        if r+c.Width+c.Delta > t {
+            return p.Value
+        }
+        p = c
+    }
+    return p.Value
+}
+```
 
 从上面代码可以看到Summary主要给prometheus server返回了下面的数据  
 
