@@ -3,7 +3,7 @@ layout: post
 title: 聊聊prometheus监控2
 category: prometheus 
 ---
-看完[聊聊prometheus监控1](https://helinbo2015.github.io/s8k/prometheus/2016/10/27/prometheus_tutorial_1.html)后，对prometheus监控方案应该有个了解了,现在肯定跃跃欲试想把他用起来了。  
+看完[聊聊prometheus监控1](https://helinbo2015.github.io/s8k/prometheus/2016/10/20/prometheus_tutorial_1.html)后，对prometheus监控方案应该有个了解了,现在肯定跃跃欲试想把他用起来了。  
 在这节里我打算用贴代码(`Go`语言)的方式说明一下怎么在监控对象中导入prometheus。  
 <!--description-->  
 
